@@ -45,8 +45,9 @@ class CompeticaoController extends Controller
             $grupos[$groupLabels[$i]] = [];
         }
 
+        // Distribuição balanceada (corrigida):
         foreach ($jogadores as $index => $jogador) {
-            $grupoIndex = $index % $numGrupos; // Distribui sequencialmente
+            $grupoIndex = floor($index / 3) % $numGrupos; // Agrupa em blocos de 3
             $grupoLabel = $groupLabels[$grupoIndex];
             $grupos[$grupoLabel][] = $jogador;
         }
