@@ -1,23 +1,8 @@
-<!DOCTYPE html>
-<html lang="pt-BR">
+@extends('layouts.layout')
 
-<head>
-    <meta charset="UTF-8">
-    <title>Resultados da Competição</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <style>
-        .grupo-table {
-            margin-bottom: 30px;
-        }
+@section('title', 'Resultados da Competição')
 
-        h4.grupo-titulo {
-            margin-top: 25px;
-            color: #2c3e50;
-        }
-    </style>
-</head>
-
-<body>
+@section('content')
     <div class="container mt-5">
         <h1>Resultados da Competição</h1>
         <h2>{{ $competicao->nome }}</h2>
@@ -30,6 +15,7 @@
         <form method="POST" action="{{ route('competicao.salvarResultados', $competicao->id) }}">
             @csrf
 
+            <!-- Exibe os jogos agrupados por grupo -->
             @foreach ($jogosPorGrupo as $grupo => $jogos)
                 <h3 class="mt-4">Grupo {{ $grupo }}</h3>
                 <table class="table table-bordered">
@@ -50,11 +36,11 @@
                                 <td>{{ $jogo->jogador2 }}</td>
                                 <td>
                                     <input type="number" name="resultados[{{ $jogo->id }}][sets_jogador1]"
-                                        value="{{ $jogo->sets_jogador1 }}" class="form-control" required>
+                                        value="{{ $jogo->sets_jogador1 ?? '' }}" class="form-control" required>
                                 </td>
                                 <td>
                                     <input type="number" name="resultados[{{ $jogo->id }}][sets_jogador2]"
-                                        value="{{ $jogo->sets_jogador2 }}" class="form-control" required>
+                                        value="{{ $jogo->sets_jogador2 ?? '' }}" class="form-control" required>
                                 </td>
                             </tr>
                         @endforeach
@@ -65,10 +51,8 @@
             <button type="submit" class="btn btn-primary">Salvar Resultados</button>
         </form>
 
-        @if ($competicao->formato == 'copa' && !empty($classificacao))
-            <!-- Seção de classificação (opcional) -->
-        @endif
+        <a href="{{ route('competicao.mataMata', $competicao->id) }}" class="btn btn-success mt-3">Avançar para a Fase
+            Eliminatória</a>
+        <a href="{{ route('competicao.index') }}" class="btn btn-secondary mt-3">Voltar</a>
     </div>
-</body>
-
-</html>
+@endsection

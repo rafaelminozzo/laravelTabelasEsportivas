@@ -6,13 +6,37 @@ use Illuminate\Http\Request;
 use App\Models\Jogador;
 use App\Models\Competicao;
 use App\Models\Jogo;
+use App\Models\Classificacao;
 
 class CompeticaoController extends Controller
 {
     public function index()
     {
-        $jogadores = Jogador::orderBy('ranking', 'asc')->get(); // Ordena do mais forte (1) para o mais fraco
-        return view('competicao.index', compact('jogadores'));
+        $jogadores = Jogador::all();
+
+        // Calcula o ranking (exemplo simples)
+        $ranking = [];
+        foreach ($jogadores as $jogador) {
+            $vitorias = Jogo::where('sets_jogador1', '>', 'sets_jogador2')
+                ->orWhere('sets_jogador2', '>', 'sets_jogador1')
+                ->where(function ($query) use ($jogador) {
+                    $query->where('jogador1', $jogador->nome)
+                        ->orWhere('jogador2', $jogador->nome);
+                })
+                ->count();
+
+            $ranking[] = [
+                'nome' => $jogador->nome,
+                'vitorias' => $vitorias,
+            ];
+        }
+
+        // Ordena o ranking por número de vitórias
+        usort($ranking, function ($a, $b) {
+            return $b['vitorias'] <=> $a['vitorias'];
+        });
+
+        return view('competicao.index', compact('jogadores', 'ranking'));
     }
 
     public function store(Request $request)
@@ -27,41 +51,62 @@ class CompeticaoController extends Controller
 
     public function gerarTabela(Request $request)
     {
+        // Cria a competição com o formato fixo como 'copa'
         $competicao = Competicao::create([
-            'nome' => 'Competição ' . now()->format('d/m/Y H:i'),
+            'nome'    => 'Competição ' . now()->format('d/m/Y H:i'),
             'formato' => 'copa'
         ]);
 
-        $jogadores = Jogador::orderBy('ranking', 'asc')->get();
+        $jogadores = Jogador::all();
         $total = $jogadores->count();
 
-        // Número de grupos (ex: 6 jogadores → 2 grupos)
-        $numGrupos = max(1, floor($total / 3));
-        $grupos = [];
+        if ($total < 3) {
+            return redirect()->route('competicao.index')
+                ->with('error', 'São necessários pelo menos 3 jogadores para a fase de grupos.');
+        }
+
+        // Ordena os jogadores pelo ranking (ordem crescente: #1 é o mais forte)
+        $jogadores = $jogadores->sortBy('ranking');
+
+        // Calcula os tamanhos dos grupos, priorizando grupos de 3 jogadores
+        $groupSizes = [];
+        if ($total % 3 == 0) {
+            $groupSizes = array_fill(0, $total / 3, 3);
+        } elseif ($total % 3 == 1) {
+            $groupSizes = array_fill(0, floor($total / 3), 3);
+            $groupSizes[0] = 4; // Um grupo terá 4 jogadores
+        } else {
+            $groupSizes = array_fill(0, floor($total / 3), 3);
+            $groupSizes[count($groupSizes) - 1] = 4; // O último grupo terá 4 jogadores
+        }
+
+        // Distribui os jogadores nos grupos (considerando o ranking)
+        $groups = [];
+        $playersArray = $jogadores->values()->all(); // Converte para array indexado
+        foreach ($groupSizes as $size) {
+            $group = [];
+            for ($i = 0; $i < $size; $i++) {
+                // Pega os jogadores mais fortes primeiro (cabeças de chave)
+                $index = $i % count($playersArray);
+                $group[] = array_shift($playersArray);
+            }
+            $groups[] = $group;
+        }
+
+        // Rótulos para os grupos (A, B, C...)
         $groupLabels = range('A', 'Z');
 
-        // Distribuição balanceada (1º, 3º, 5º no Grupo A | 2º, 4º, 6º no Grupo B)
-        for ($i = 0; $i < $numGrupos; $i++) {
-            $grupos[$groupLabels[$i]] = [];
-        }
-
-        // Distribuição balanceada (corrigida):
-        foreach ($jogadores as $index => $jogador) {
-            $grupoIndex = floor($index / 3) % $numGrupos; // Agrupa em blocos de 3
-            $grupoLabel = $groupLabels[$grupoIndex];
-            $grupos[$grupoLabel][] = $jogador;
-        }
-
-        // Cria os jogos (round-robin dentro de cada grupo)
-        foreach ($grupos as $grupoLabel => $jogadoresGrupo) {
-            foreach ($jogadoresGrupo as $i => $jogador1) {
-                for ($j = $i + 1; $j < count($jogadoresGrupo); $j++) {
-                    $jogador2 = $jogadoresGrupo[$j];
+        // Criação dos jogos (round-robin) para cada grupo
+        foreach ($groups as $index => $grupo) {
+            $grupoLabel = $groupLabels[$index];
+            foreach ($grupo as $i => $jogador1) {
+                for ($j = $i + 1; $j < count($grupo); $j++) {
+                    $jogador2 = $grupo[$j];
                     Jogo::create([
                         'competicao_id' => $competicao->id,
-                        'jogador1' => $jogador1->nome,
-                        'jogador2' => $jogador2->nome,
-                        'grupo' => $grupoLabel
+                        'jogador1'      => $jogador1->nome,
+                        'jogador2'      => $jogador2->nome,
+                        'grupo'         => $grupoLabel // Atribui o grupo corretamente
                     ]);
                 }
             }
@@ -154,6 +199,7 @@ class CompeticaoController extends Controller
 
     public function salvarResultados(Request $request, $id)
     {
+        // Salva os resultados dos jogos
         $resultados = $request->input('resultados');
         foreach ($resultados as $jogoId => $res) {
             $jogo = Jogo::find($jogoId);
@@ -163,6 +209,25 @@ class CompeticaoController extends Controller
                 $jogo->save();
             }
         }
+
+        // Calcula a classificação final
+        $classificacao = $this->calcularClassificacao($id);
+
+        // Define a pontuação final com base na posição
+        $posicoes = [13, 10, 7, 5, 4, 3, 2, 1];
+
+        // Salva a classificação na tabela `classificacoes`
+        foreach ($classificacao as $grupo => $jogadores) {
+            foreach ($jogadores as $index => $jogador) {
+                Classificacao::create([
+                    'competicao_id' => $id,
+                    'jogador'       => $jogador['nome'],
+                    'posicao'       => $index + 1,
+                    'pontos'        => $posicoes[$index] ?? 0,
+                ]);
+            }
+        }
+
         return redirect()->route('competicao.resultados', $id)->with('success', 'Resultados atualizados!');
     }
 
@@ -258,5 +323,13 @@ class CompeticaoController extends Controller
         $jogador->delete(); // Aplica Soft Delete ao jogador
 
         return redirect()->route('competicao.index')->with('success', 'Jogador excluído com sucesso!');
+    }
+
+    public function historico()
+    {
+        // Busca todas as competições com suas classificações
+        $competicoes = Competicao::with('classificacoes')->get();
+
+        return view('competicao.historico', compact('competicoes'));
     }
 }

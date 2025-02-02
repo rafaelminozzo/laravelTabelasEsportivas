@@ -22,4 +22,6 @@ Route::get('/jogadores/excluidos', [CompeticaoController::class, 'jogadoresExclu
 // Rota para restaurar jogador
 Route::post('/jogadores/{id}/restore', [CompeticaoController::class, 'restoreJogador'])->name('competicao.restoreJogador');
 
+Route::get('/competicoes/historico', [CompeticaoController::class, 'historico'])->name('competicao.historico');
+
 
