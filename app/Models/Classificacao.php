@@ -14,6 +14,10 @@ class Classificacao extends Model
      *
      * @var array
      */
+
+    // Define o nome da tabela manualmente
+    protected $table = 'classificacoes';
+
     protected $fillable = [
         'competicao_id',
         'jogador',

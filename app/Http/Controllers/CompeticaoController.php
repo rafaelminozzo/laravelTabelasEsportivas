@@ -7,6 +7,7 @@ use App\Models\Jogador;
 use App\Models\Competicao;
 use App\Models\Jogo;
 use App\Models\Classificacao;
+use App\Models\Confronto;
 
 class CompeticaoController extends Controller
 {
@@ -41,11 +42,14 @@ class CompeticaoController extends Controller
 
     public function store(Request $request)
     {
+        // Validação para garantir que o nome seja único
         $request->validate([
-            'nome' => 'required'
+            'nome' => 'required|unique:jogadors,nome',
         ]);
 
+        // Cria o jogador
         Jogador::create($request->only('nome'));
+
         return redirect()->route('competicao.index')->with('success', 'Jogador adicionado!');
     }
 
@@ -110,62 +114,45 @@ class CompeticaoController extends Controller
         return redirect()->route('competicao.resultados', $competicao->id);
     }
 
-    public function gerarMataMataDaCopa($id)
+    public function gerarMataMataDaCopa($competicao_id)
     {
-        $competicao = Competicao::findOrFail($id);
+        // Calcula a classificação final da fase de grupos
+        $classificacao = $this->calcularClassificacao($competicao_id);
 
-        // Verificar se todos os jogos da fase de grupos têm resultados
-        $jogosIncompletos = Jogo::where('competicao_id', $id)
-            ->whereNotNull('grupo')
-            ->where(function ($query) {
-                $query->whereNull('sets_jogador1')
-                    ->orWhereNull('sets_jogador2');
-            })->exists();
-
-        if ($jogosIncompletos) {
-            return redirect()->back()->with('error', 'Alguns jogos da fase de grupos não têm resultados definidos.');
-        }
-
-        $classificacao = $this->calcularClassificacao($id);
         $avancados = [];
-
+        // Pega os dois primeiros de cada grupo
         foreach ($classificacao as $grupo => $jogadores) {
             if (count($jogadores) >= 2) {
-                $avancados[] = $jogadores[0]; // Primeiro colocado
-                $avancados[] = $jogadores[1]; // Segundo colocado
+                $avancados[] = ['nome' => $jogadores[0]['nome'], 'grupo' => $grupo];
+                $avancados[] = ['nome' => $jogadores[1]['nome'], 'grupo' => $grupo];
             }
         }
 
+        // Completa o número de times para formar uma chave de mata-mata válida
         $numTeams = count($avancados);
-        $bracketSize = pow(2, ceil(log($numTeams, 2)));
-
-        // Adicionar "Bye" se necessário
+        $bracketSize = pow(2, ceil(log($numTeams, 2))); // Próxima potência de 2
         while (count($avancados) < $bracketSize) {
-            $avancados[] = 'Bye';
+            $avancados[] = ['nome' => 'Bye'];
         }
 
-        // Embaralhar para distribuir os grupos
-        shuffle($avancados);
+        // Ordena os jogadores para evitar confrontos entre cabeças de chave nas fases iniciais
+        usort($avancados, function ($a, $b) {
+            return strcmp($a['nome'], $b['nome']); // Ordena alfabeticamente ou por ranking
+        });
 
-        // Gerar confrontos
+        // Cria os confrontos iniciais
         $matches = [];
         for ($i = 0; $i < $bracketSize / 2; $i++) {
-            $jogador1 = $avancados[$i];
-            $jogador2 = $avancados[$bracketSize - 1 - $i];
             $matches[] = [
-                'jogador1' => $jogador1,
-                'jogador2' => $jogador2,
+                'jogador1' => $avancados[$i]['nome'] ?? 'Bye',
+                'jogador2' => $avancados[$bracketSize - 1 - $i]['nome'] ?? 'Bye',
             ];
-
-            // Salvar no banco de dados
-            Jogo::create([
-                'competicao_id' => $competicao->id,
-                'jogador1' => $jogador1,
-                'jogador2' => $jogador2,
-                'grupo' => 'Mata-Mata'
-            ]);
         }
 
+        // Busca a competição pelo ID
+        $competicao = Competicao::findOrFail($competicao_id);
+
+        // Retorna a view com os dados necessários
         return view('competicao.mata_mata', compact('matches', 'competicao'));
     }
 
@@ -236,13 +223,14 @@ class CompeticaoController extends Controller
             ->get();
 
         $classificacao = [];
-
         foreach ($jogos as $jogo) {
             $grupo = $jogo->grupo;
 
+            // Inicializa os jogadores no grupo, se ainda não existirem
             foreach ([$jogo->jogador1, $jogo->jogador2] as $jogador) {
                 if (!isset($classificacao[$grupo][$jogador])) {
                     $classificacao[$grupo][$jogador] = [
+                        'nome'        => $jogador,
                         'pontos'      => 0,
                         'sets_favor'  => 0,
                         'sets_contra' => 0,
@@ -250,6 +238,7 @@ class CompeticaoController extends Controller
                 }
             }
 
+            // Atualiza os sets e pontos com base nos resultados
             if ($jogo->sets_jogador1 !== null && $jogo->sets_jogador2 !== null) {
                 $classificacao[$grupo][$jogo->jogador1]['sets_favor'] += $jogo->sets_jogador1;
                 $classificacao[$grupo][$jogo->jogador1]['sets_contra'] += $jogo->sets_jogador2;
@@ -267,13 +256,11 @@ class CompeticaoController extends Controller
             }
         }
 
+        // Ordena os jogadores de cada grupo por pontos
         foreach ($classificacao as $grupo => &$jogadores) {
-            uasort($jogadores, function ($a, $b) {
-                // Ordenar por pontos, depois por saldo de sets
-                return $b['pontos'] <=> $a['pontos'] ?: ($b['sets_favor'] - $b['sets_contra']) <=> ($a['sets_favor'] - $a['sets_contra']);
+            usort($jogadores, function ($a, $b) {
+                return $b['pontos'] <=> $a['pontos'];
             });
-            // Manter a ordem, mas extrair os nomes
-            $jogadores = array_keys($jogadores);
         }
 
         return $classificacao;
@@ -329,5 +316,27 @@ class CompeticaoController extends Controller
         $competicoes = Competicao::with('classificacoes')->get();
 
         return view('competicao.historico', compact('competicoes'));
+    }
+
+    public function salvarConfronto(Request $request)
+    {
+        $request->validate([
+            'competicao_id' => 'required|exists:competicaos,id',
+            'jogador1'      => 'nullable|string',
+            'jogador2'      => 'nullable|string',
+            'sets_jogador1' => 'nullable|integer',
+            'sets_jogador2' => 'nullable|integer',
+        ]);
+
+        Confronto::create([
+            'competicao_id' => $request->competicao_id,
+            'fase'          => 'oitavas', // Defina a fase correta aqui
+            'jogador1'      => $request->jogador1,
+            'jogador2'      => $request->jogador2,
+            'sets_jogador1' => $request->sets_jogador1,
+            'sets_jogador2' => $request->sets_jogador2,
+        ]);
+
+        return redirect()->back()->with('success', 'Resultado do confronto salvo!');
     }
 }

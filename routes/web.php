@@ -24,4 +24,6 @@ Route::post('/jogadores/{id}/restore', [CompeticaoController::class, 'restoreJog
 
 Route::get('/competicoes/historico', [CompeticaoController::class, 'historico'])->name('competicao.historico');
 
+Route::post('/competicao/salvar-confronto', [CompeticaoController::class, 'salvarConfronto'])->name('competicao.salvarConfronto');
+
 
