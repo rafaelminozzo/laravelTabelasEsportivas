@@ -26,4 +26,4 @@ Route::get('/competicoes/historico', [CompeticaoController::class, 'historico'])
 
 Route::post('/competicao/salvar-confronto', [CompeticaoController::class, 'salvarConfronto'])->name('competicao.salvarConfronto');
 
-
+Route::post('/competicao/{id}/salvar-resultados-mata-mata', [CompeticaoController::class, 'salvarResultadosMataMata'])->name('competicao.salvarResultadosMataMata');

@@ -17,7 +17,7 @@
 
             <!-- Exibe os jogos agrupados por grupo -->
             @foreach ($jogosPorGrupo as $grupo => $jogos)
-                <h3 class="mt-4">Grupo {{ $grupo }}</h3>
+                <h3>Grupo {{ $grupo }}</h3>
                 <table class="table table-bordered">
                     <thead>
                         <tr>
@@ -36,20 +36,74 @@
                                 <td>{{ $jogo->jogador2 }}</td>
                                 <td>
                                     <input type="number" name="resultados[{{ $jogo->id }}][sets_jogador1]"
-                                        value="{{ $jogo->sets_jogador1 ?? '' }}" class="form-control" required>
+                                        value="{{ $jogo->sets_jogador1 ?? '' }}" class="form-control">
                                 </td>
                                 <td>
                                     <input type="number" name="resultados[{{ $jogo->id }}][sets_jogador2]"
-                                        value="{{ $jogo->sets_jogador2 ?? '' }}" class="form-control" required>
+                                        value="{{ $jogo->sets_jogador2 ?? '' }}" class="form-control">
                                 </td>
                             </tr>
                         @endforeach
+                    </tbody>
+                </table>
+
+                <!-- Exibe a classificação parcial do grupo -->
+                <h4>Classificação Parcial do Grupo {{ $grupo }}</h4>
+                <table class="table table-bordered">
+                    <thead>
+                        <tr>
+                            <th>Posição</th>
+                            <th>Jogador</th>
+                            <th>Pontos</th>
+                            <th>Sets a Favor</th>
+                            <th>Sets Contra</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (isset($classificacao[$grupo]))
+                            @foreach ($classificacao[$grupo] as $index => $jogador)
+                                <tr>
+                                    <td>{{ $index + 1 }}º</td>
+                                    <td>{{ $jogador['nome'] }}</td>
+                                    <td>{{ $jogador['pontos'] }}</td>
+                                    <td>{{ $jogador['sets_favor'] }}</td>
+                                    <td>{{ $jogador['sets_contra'] }}</td>
+                                </tr>
+                            @endforeach
+                        @endif
                     </tbody>
                 </table>
             @endforeach
 
             <button type="submit" class="btn btn-primary">Salvar Resultados</button>
         </form>
+
+        <!-- Exibe a classificação de cada grupo -->
+        @foreach ($classificacao as $grupo => $jogadores)
+            <h4>Classificação do Grupo {{ $grupo }}</h4>
+            <table class="table table-bordered">
+                <thead>
+                    <tr>
+                        <th>Posição</th>
+                        <th>Jogador</th>
+                        <th>Pontos</th>
+                        <th>Sets a Favor</th>
+                        <th>Sets Contra</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach ($jogadores as $index => $jogador)
+                        <tr>
+                            <td>{{ $index + 1 }}º</td>
+                            <td>{{ $jogador['nome'] }}</td>
+                            <td>{{ $jogador['pontos'] }}</td>
+                            <td>{{ $jogador['sets_favor'] }}</td>
+                            <td>{{ $jogador['sets_contra'] }}</td>
+                        </tr>
+                    @endforeach
+                </tbody>
+            </table>
+        @endforeach
 
         <a href="{{ route('competicao.mataMata', $competicao->id) }}" class="btn btn-success mt-3">Avançar para a Fase
             Eliminatória</a>

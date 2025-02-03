@@ -44,8 +44,16 @@ class CompeticaoController extends Controller
     {
         // Validação para garantir que o nome seja único
         $request->validate([
-            'nome' => 'required|unique:jogadors,nome',
+            'nome' => 'required|unique:jogadors,nome|string|max:20',
         ]);
+
+        // Verifica se o jogador já existe
+        $jogadorExistente = Jogador::where('nome', $request->input('nome'))->first();
+
+        if ($jogadorExistente) {
+            return redirect()->route('competicao.index')
+                ->with('error', 'O jogador "' . $request->input('nome') . '" já está cadastrado.');
+        }
 
         // Cria o jogador
         Jogador::create($request->only('nome'));
@@ -130,15 +138,10 @@ class CompeticaoController extends Controller
 
         // Completa o número de times para formar uma chave de mata-mata válida
         $numTeams = count($avancados);
-        $bracketSize = pow(2, ceil(log($numTeams, 2))); // Próxima potência de 2
+        $bracketSize = pow(2, ceil(log($numTeams, 2)));
         while (count($avancados) < $bracketSize) {
             $avancados[] = ['nome' => 'Bye'];
         }
-
-        // Ordena os jogadores para evitar confrontos entre cabeças de chave nas fases iniciais
-        usort($avancados, function ($a, $b) {
-            return strcmp($a['nome'], $b['nome']); // Ordena alfabeticamente ou por ranking
-        });
 
         // Cria os confrontos iniciais
         $matches = [];
@@ -147,13 +150,24 @@ class CompeticaoController extends Controller
                 'jogador1' => $avancados[$i]['nome'] ?? 'Bye',
                 'jogador2' => $avancados[$bracketSize - 1 - $i]['nome'] ?? 'Bye',
             ];
+
+            // Salva os confrontos na tabela `confrontos`
+            Confronto::create([
+                'competicao_id' => $competicao_id,
+                'fase'          => $this->getFaseAtual($bracketSize / 2),
+                'jogador1'      => $matches[$i]['jogador1'],
+                'jogador2'      => $matches[$i]['jogador2'],
+            ]);
         }
+
+        // Determina a fase atual com base no número de confrontos
+        $fase = $this->getFaseAtual($bracketSize / 2);
 
         // Busca a competição pelo ID
         $competicao = Competicao::findOrFail($competicao_id);
 
         // Retorna a view com os dados necessários
-        return view('competicao.mata_mata', compact('matches', 'competicao'));
+        return view('competicao.mata_mata', compact('matches', 'competicao', 'fase'));
     }
 
 
@@ -182,10 +196,11 @@ class CompeticaoController extends Controller
         return view('competicao.resultados', compact('competicao', 'jogosPorGrupo', 'classificacao'));
     }
 
+
     public function salvarResultados(Request $request, $id)
     {
-        // Salva os resultados dos jogos
         $resultados = $request->input('resultados');
+
         foreach ($resultados as $jogoId => $res) {
             $jogo = Jogo::find($jogoId);
             if ($jogo) {
@@ -195,7 +210,7 @@ class CompeticaoController extends Controller
             }
         }
 
-        // Calcula a classificação final
+        // Calcula a classificação parcial
         $classificacao = $this->calcularClassificacao($id);
 
         // Define a pontuação final com base na posição
@@ -214,6 +229,34 @@ class CompeticaoController extends Controller
         }
 
         return redirect()->route('competicao.resultados', $id)->with('success', 'Resultados atualizados!');
+    }
+
+    public function salvarResultadosDoMataMata(Request $request, $competicao_id)
+    {
+        $resultados = $request->input('resultados');
+
+        foreach ($resultados as $matchId => $resultado) {
+            $match = Confronto::find($matchId);
+
+            if ($match) {
+                // Verifica se algum dos jogadores é um "Bye"
+                if ($match->jogador1 === 'Bye') {
+                    $match->sets_jogador1 = 0;
+                    $match->sets_jogador2 = 3; // Jogador 2 avança automaticamente
+                } elseif ($match->jogador2 === 'Bye') {
+                    $match->sets_jogador1 = 3; // Jogador 1 avança automaticamente
+                    $match->sets_jogador2 = 0;
+                } else {
+                    // Salva os resultados normais
+                    $match->sets_jogador1 = $resultado['sets_jogador1'];
+                    $match->sets_jogador2 = $resultado['sets_jogador2'];
+                }
+
+                $match->save();
+            }
+        }
+
+        return redirect()->back()->with('success', 'Resultados salvos!');
     }
 
     private function calcularClassificacao($competicao_id)
@@ -338,5 +381,98 @@ class CompeticaoController extends Controller
         ]);
 
         return redirect()->back()->with('success', 'Resultado do confronto salvo!');
+    }
+
+    public function salvarResultadosMataMata(Request $request, $competicao_id)
+    {
+        $resultados = $request->input('resultados');
+
+        // Array para armazenar os jogadores que avançam para a próxima fase
+        $vencedores = [];
+
+        // Recupera os confrontos da fase atual
+        $confrontos = Confronto::where('competicao_id', $competicao_id)
+            ->whereNull('sets_jogador1') // Apenas confrontos sem resultados salvos
+            ->whereNull('sets_jogador2')
+            ->get();
+
+        foreach ($confrontos as $index => $confronto) {
+            // Verifica se o resultado para este confronto foi enviado
+            if (!isset($resultados[$index]['sets_jogador1']) || !isset($resultados[$index]['sets_jogador2'])) {
+                return redirect()->back()->with('error', 'Por favor, preencha todos os resultados.');
+            }
+
+            $sets_jogador1 = $resultados[$index]['sets_jogador1'];
+            $sets_jogador2 = $resultados[$index]['sets_jogador2'];
+
+            // Atualiza o confronto com os resultados
+            $confronto->update([
+                'sets_jogador1' => $sets_jogador1,
+                'sets_jogador2' => $sets_jogador2,
+            ]);
+
+            // Verifica quem venceu o confronto
+            if ($sets_jogador1 > $sets_jogador2) {
+                $vencedores[] = $confronto->jogador1;
+            } elseif ($sets_jogador1 < $sets_jogador2) {
+                $vencedores[] = $confronto->jogador2;
+            } else {
+                // Em caso de empate, decide por critérios adicionais (ex.: ranking)
+                // Aqui, vamos assumir que o jogador 1 avança
+                $vencedores[] = $confronto->jogador1;
+            }
+        }
+
+        // Gera a próxima fase com base nos vencedores
+        return $this->gerarProximaFase($competicao_id, $vencedores);
+    }
+
+    private function gerarProximaFase($competicao_id, $vencedores)
+    {
+        $numTeams = count($vencedores);
+        $bracketSize = pow(2, ceil(log($numTeams, 2)));
+
+        // Completa o número de times para formar uma chave válida
+        while (count($vencedores) < $bracketSize) {
+            $vencedores[] = 'Bye';
+        }
+
+        // Cria os confrontos da próxima fase
+        $matches = [];
+        for ($i = 0; $i < $bracketSize / 2; $i++) {
+            $matches[] = [
+                'jogador1' => $vencedores[$i] ?? 'Bye',
+                'jogador2' => $vencedores[$bracketSize - 1 - $i] ?? 'Bye',
+            ];
+
+            // Salva os confrontos na tabela `confrontos`
+            Confronto::create([
+                'competicao_id' => $competicao_id,
+                'fase'          => $this->getFaseAtual($bracketSize / 2),
+                'jogador1'      => $matches[$i]['jogador1'],
+                'jogador2'      => $matches[$i]['jogador2'],
+            ]);
+        }
+
+        // Determina a fase atual com base no número de confrontos
+        $fase = $this->getFaseAtual($bracketSize / 2);
+
+        // Busca a competição pelo ID
+        $competicao = Competicao::findOrFail($competicao_id);
+
+        // Retorna a view com os dados da próxima fase
+        return view('competicao.mata_mata', compact('matches', 'competicao', 'fase'));
+    }
+
+    private function getFaseAtual($numMatches)
+    {
+        return match ($numMatches) {
+            32 => 'Fase de 32',
+            16 => 'Oitavas de Final',
+            8  => 'Quartas de Final',
+            4  => 'Semifinal',
+            2  => 'Final',
+            default => 'Fase Inicial',
+        };
     }
 }

@@ -4,38 +4,41 @@
 
 @section('content')
     <div class="container mt-5">
-        <h1>Fase Mata-Mata - {{ $competicao->nome }}</h1>
+        <h1>Fase Eliminatória - {{ $fase }}</h1>
         <p>Competição: {{ ucfirst($competicao->formato) }}</p>
 
-        <h3 class="mt-4">Chave de Confrontos</h3>
-        <div class="row">
-            @foreach ($matches as $index => $match)
-                <div class="col-md-6 mb-3">
-                    <div class="card">
-                        <div class="card-body">
-                            <h5 class="card-title">Confronto {{ $index + 1 }}</h5>
-                            <p>{{ $match['jogador1'] }} vs {{ $match['jogador2'] }}</p>
-                            <form method="POST" action="{{ route('competicao.salvarConfronto') }}">
-                                @csrf
-                                <input type="hidden" name="competicao_id" value="{{ $competicao->id }}">
-                                <input type="hidden" name="jogador1" value="{{ $match['jogador1'] }}">
-                                <input type="hidden" name="jogador2" value="{{ $match['jogador2'] }}">
-                                <div class="mb-3">
-                                    <label for="sets_jogador1" class="form-label">Sets {{ $match['jogador1'] }}</label>
-                                    <input type="number" class="form-control" id="sets_jogador1" name="sets_jogador1"
-                                        required>
+        <h3 class="mt-4">Confrontos</h3>
+        <form method="POST" action="{{ route('competicao.salvarResultadosMataMata', $competicao->id) }}">
+            @csrf
+            <ul class="list-group">
+                @foreach ($matches as $index => $match)
+                    <li class="list-group-item">
+                        @if ($match['jogador1'] === 'Bye')
+                            <strong>{{ $match['jogador2'] }}</strong> avança automaticamente.
+                        @elseif ($match['jogador2'] === 'Bye')
+                            <strong>{{ $match['jogador1'] }}</strong> avança automaticamente.
+                        @else
+                            <div class="row">
+                                <div class="col-md-5">
+                                    {{ $match['jogador1'] }}
+                                    <input type="number" name="resultados[{{ $index }}][sets_jogador1]"
+                                        class="form-control" placeholder="Sets">
                                 </div>
-                                <div class="mb-3">
-                                    <label for="sets_jogador2" class="form-label">Sets {{ $match['jogador2'] }}</label>
-                                    <input type="number" class="form-control" id="sets_jogador2" name="sets_jogador2"
-                                        required>
+                                <div class="col-md-2 text-center">vs</div>
+                                <div class="col-md-5">
+                                    {{ $match['jogador2'] }}
+                                    <input type="number" name="resultados[{{ $index }}][sets_jogador2]"
+                                        class="form-control" placeholder="Sets">
                                 </div>
-                                <button type="submit" class="btn btn-primary">Salvar Resultado</button>
-                            </form>
-                        </div>
-                    </div>
-                </div>
-            @endforeach
-        </div>
+                            </div>
+                        @endif
+                    </li>
+                @endforeach
+            </ul>
+            <button type="submit" class="btn btn-primary mt-3">Salvar Resultados e Avançar</button>
+        </form>
+
+        <a href="{{ route('competicao.resultados', $competicao->id) }}" class="btn btn-secondary mt-3">Voltar para os
+            Resultados</a>
     </div>
 @endsection
