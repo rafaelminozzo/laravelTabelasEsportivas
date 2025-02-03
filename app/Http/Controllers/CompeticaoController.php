@@ -84,12 +84,7 @@ class CompeticaoController extends Controller
         $groups = [];
         $playersArray = $jogadores->values()->all(); // Converte para array indexado
         foreach ($groupSizes as $size) {
-            $group = [];
-            for ($i = 0; $i < $size; $i++) {
-                // Pega os jogadores mais fortes primeiro (cabeças de chave)
-                $index = $i % count($playersArray);
-                $group[] = array_shift($playersArray);
-            }
+            $group = array_splice($playersArray, 0, $size);
             $groups[] = $group;
         }
 
@@ -106,7 +101,7 @@ class CompeticaoController extends Controller
                         'competicao_id' => $competicao->id,
                         'jogador1'      => $jogador1->nome,
                         'jogador2'      => $jogador2->nome,
-                        'grupo'         => $grupoLabel // Atribui o grupo corretamente
+                        'grupo'         => $grupoLabel // Garante que o grupo seja preenchido
                     ]);
                 }
             }
@@ -179,7 +174,7 @@ class CompeticaoController extends Controller
     {
         $competicao = Competicao::findOrFail($id);
 
-        // Obtem os jogos da competição, ordenados por grupo
+        // Obtém os jogos da competição, ordenados por grupo
         $jogos = Jogo::where('competicao_id', $id)
             ->orderBy('grupo')
             ->orderBy('id') // Ordena também por ID dentro de cada grupo
@@ -187,6 +182,9 @@ class CompeticaoController extends Controller
 
         // Agrupa os jogos por grupo
         $jogosPorGrupo = $jogos->groupBy('grupo');
+
+        // Depuração: Verifica se os jogos estão sendo agrupados corretamente
+        // dd($jogosPorGrupo);
 
         // Calcula a classificação dos grupos se o formato for 'copa'
         $classificacao = [];

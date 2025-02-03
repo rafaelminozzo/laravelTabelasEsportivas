@@ -9,5 +9,12 @@ class Jogo extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['competicao_id', 'jogador1', 'jogador2', 'sets_jogador1', 'sets_jogador2'];
+    protected $fillable = [
+        'competicao_id',
+        'jogador1',
+        'jogador2',
+        'sets_jogador1',
+        'sets_jogador2',
+        'grupo' // Certifique-se de que este campo está incluído
+    ];
 }
